@@ -68,12 +68,12 @@ a denser layout.  When nil, children are stacked sequentially."
   :group 'org-mindmap)
 
 (defface org-mindmap-face-connectors
-  '((t :inherit shadow))
+  '((t :inherit fixed-pitch))
   "Face for connector characters."
   :group 'org-mindmap)
 
 (defface org-mindmap-face-text
-  '((t :inherit bold))
+  '((t :inherit fixed-pitch))
   "Face for node text."
   :group 'org-mindmap)
 
@@ -106,7 +106,10 @@ Ensures properties are not sticky to allow editing node text at the boundary."
       (insert (make-string (- row max-line) ?\n))))
   (goto-char (point-min))
   (forward-line row)
-  (move-to-column col t))
+  (move-to-column col)
+  (while (< (current-column) col)
+    (insert (org-mindmap--propertize-text " "))
+    (move-to-column col)))
 
 (defun org-mindmap--node-occupancy (n spacing)
   "Return (start-col end-col) for node N with SPACING."
@@ -505,11 +508,14 @@ Handles legacy migration of :layout left/compact/centered."
   "Replace region from START to END with rendered ROOTS, and focus TARGET-ID.
 Accepts LAYOUT, SPACING, and COMPACTED."
   (let ((rendered (org-mindmap-render-tree roots layout spacing compacted)))
+    ;; Draw the map.
     (save-excursion
       (goto-char start)
       (forward-line 1)
-      (let ((inhibit-read-only t)) (delete-region (point) (save-excursion (goto-char end) (line-beginning-position)))
-           (insert rendered "\n")))
+      (let ((inhibit-read-only t))
+        (delete-region (point) (save-excursion (goto-char end) (line-beginning-position)))
+        (insert rendered "\n")))
+    ;; Set the point on its last place.
     (if target-id
         (let ((target-node (org-mindmap--find-node-by-id roots target-id)))
           (if target-node
