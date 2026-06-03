@@ -233,7 +233,7 @@ OCCUPIED-MAP is a hash table mapping rows to lists of occupied columns."
 
 ;; TODO
 (defun org-mindmap--shift-subtree (node prev-node occupied-map compacted spacing)
-  "Shift node subtree"
+  "Shift NODE subtree upwards and update OCCUPIED-MAP.  Requires PREV-NODE (may be nil), COMPACTED, SPACING."
   (let* ((subtree (org-mindmap--subtree node))
          (delta
           ;; Shift the node tree vertically:
@@ -274,11 +274,9 @@ Requires COL, LAYOUT, SPACING, and COMPACTED."
         (dolist (child children)
           (let* ((child-len (string-width (org-mindmap--node-display-text child)))
                  (child-col (if (eq side 'left) (- col 4 child-len) (+ col text-len 4))))
-            ;; With child nodes tree:
-            (org-mindmap-build-subtree child child-col layout spacing compacted)
-            (org-mindmap--shift-subtree child prev-child occupied-map compacted spacing)
-            ;; ... store newly found nodes to the accumulators.
-            (setq prev-child child)))))
+            (org-mindmap-build-subtree child child-col layout spacing compacted))
+          (org-mindmap--shift-subtree child prev-child occupied-map compacted spacing)
+          (setq prev-child child))))
     ;; Set the node row:
     (setf (org-mindmap-parser-node-row node)
           (if (eq layout 'centered)
@@ -309,38 +307,23 @@ Requires COL, LAYOUT, SPACING, and COMPACTED."
 (defun org-mindmap-build-tree-layout (roots layout spacing compacted)
   "Assign row and col to all nodes in ROOTS using LAYOUT, SPACING, and COMPACTED."
   (let ((occupied-map (make-hash-table :test 'eq))
-        (descendants nil)
-        (prev-root-row nil))
+        (prev-root nil))
+    ;; TODO Multiple roots are rudimentary, we should remove them and simplify the logic.
     (dolist (root roots)
-      (cl-destructuring-bind (r-min _ r-nodes)
-          (org-mindmap-build-subtree root 3 layout spacing compacted)
-        (let* ((r-root-row (org-mindmap-parser-node-row root))
-               (min-delta (if prev-root-row
-                              (+ prev-root-row 1 (- r-root-row))
-                            (- r-min)))
-               (delta min-delta))
-          (if compacted
-              (let ((r-nodes-occ (org-mindmap--get-occupied-rows r-nodes spacing)))
-                (while (org-mindmap--check-overlap-subtree r-nodes-occ delta occupied-map)
-                  (incf delta)))
-            (setq delta (if descendants
-                            (+ (org-mindmap--max-row descendants) 1 (- r-min))
-                          (- r-min))))
-          (dolist (n r-nodes)
-            (incf (org-mindmap-parser-node-row n) delta ))
-          (org-mindmap--update-occupied-map occupied-map r-nodes spacing)
-          (setq prev-root-row (org-mindmap-parser-node-row root))
-          (setq descendants (append descendants r-nodes)))))
-    (when descendants
-      (let ((min-r (org-mindmap--min-row descendants))
-            (min-c (org-mindmap--min-column descendants)))
-        (unless (= min-r 0)
-          (dolist (n descendants)
-            (decf (org-mindmap-parser-node-row n) min-r)))
-        (unless (= min-c 0)
-          (dolist (n descendants)
-            (decf (org-mindmap-parser-node-col n) min-c)))))
-    descendants))
+      (org-mindmap-build-subtree root 3 layout spacing compacted)
+      (org-mindmap--shift-subtree root prev-root occupied-map compacted spacing)
+      (setq prev-root root))
+    ;; Put the map to the upper-left corner if it somehow drifted away.
+    (let* ((all-nodes (cl-loop for root in roots append (org-mindmap--subtree root)))
+           (min-r (org-mindmap--min-row all-nodes))
+           (min-c (org-mindmap--min-column all-nodes)))
+      (unless (= min-r 0)
+        (dolist (n all-nodes)
+          (decf (org-mindmap-parser-node-row n) min-r)))
+      (unless (= min-c 0)
+        (dolist (n all-nodes)
+          (decf (org-mindmap-parser-node-col n) min-c)))
+      all-nodes)))
 
 (defun org-mindmap--node-display-text (node)
   "Return the actual string to be displayed for NODE, including delimiters if root."
