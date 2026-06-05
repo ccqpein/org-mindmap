@@ -154,21 +154,24 @@ Ensures properties are not sticky to allow editing node text at the boundary."
          (wrap-leaves (plist-get props :wrap-leaves))
          (lines (if (and max-width (or wrap-leaves (org-mindmap-parser-node-children node)))
                     (string-split (string-fill text max-width) "\n")
-                  (list text))))
-    ;; TODO Handle root node: delimiters should stay on the first line.
+                  (list text)))
+         (node-box-width (apply #'max (mapcar #'string-width lines)))
+         (padded-lines (mapcar #'(lambda (l) (string-pad l node-box-width)) lines)))
     ;; IDEA Put lines both below and above the connector row.
     (if (null (org-mindmap-parser-node-parent node))
-        (append (list (org-mindmap--add-root-delimiters (car lines) (car org-mindmap-parser-root-delimiters)))
-                (mapcar #'org-mindmap--add-root-delimiters (cdr lines)))
-      lines)))
+        ;; ... append delimiters to the first line of the root node
+        (append (list (org-mindmap--add-root-delimiters (car padded-lines) (car org-mindmap-parser-root-delimiters)))
+                (mapcar #'org-mindmap--add-root-delimiters (cdr padded-lines)))
+      ;; ... or just return the lines
+      padded-lines)))
 
 (defun org-mindmap--node-box (node props)
   "Calculate NODE width, respecting node text wrapping specified by PROPS.
 Return (width height . lines) cons cell."
   (let* ((lines (org-mindmap--node-display-lines node props))
-         (max-width (apply #'max (mapcar #'string-width lines)))
+         (width (string-width (car lines)))
          (height (length lines)))
-    (cons max-width (cons height lines))))
+    (cons width (cons height lines))))
 
 (defun org-mindmap--calculate-max-width (max-depth)
   "Return the optimal max-width for the current window and tree MAX-DEPTH."
@@ -396,10 +399,9 @@ HAS-ABOVE, HAS-BELOW, HAS-LEFT, HAS-RIGHT are booleans."
     ;; Insert the node text.
     (cl-loop for i below (length node-lines) do
              (org-mindmap--move-to (+ node-row i) node-col)
-             (let ((line (string-pad (nth i node-lines) node-len))
-                   (end (+ (point) node-len)))
-               (delete-region (point) (min end (line-end-position)))
-               (insert (org-mindmap--propertize-text line))))
+             (let ((end (+ (point) node-len)))
+               (delete-region (point) (min end (line-end-position))))
+             (insert (org-mindmap--propertize-text (nth i node-lines))))
     ;; Draw children:
     (dolist (side (list 'left 'right))
       (when-let* ((children (org-mindmap--side-children node side))

@@ -510,7 +510,7 @@ Root2 ╰─ B
 авторского       │                     ╭─ Режиссёры ╯  Cahiers
 (режиссёрского)  │                     │               du     
 кино             │                     │               Cinema 
-   "Об          ─┴ Франсуа ── « New »  ┤                                  ╭─ на    
+   "Об          ─┴ Франсуа ── « New  » ┤                                  ╭─ на    
    одной           Трюффо       Wave   │                                  │  улицах
    тенденции                           ╰─ Связи ── Итальянский ── надо    ┴─ не        
    французского                                    неореализм     снимать    в         
@@ -518,15 +518,15 @@ Root2 ╰─ B
    1954        
 #+end_mindmap
 #+begin_expected
-    - New Wave (row:3, col:37, side:nil)
-      - Режиссёры (row:2, col:53, side:right)
-        - Журнал Cahiers du Cinema (row:2, col:66, side:right)
-      - Франсуа Трюффо (row:3, col:18, side:left)
+    - New Wave (row:4, col:30, side:nil)
+      - Режиссёры (row:1, col:42, side:right)
+        - Журнал Cahiers du Cinema (row:0, col:55, side:right)
+      - Франсуа Трюффо (row:4, col:18, side:left)
         - идея авторского (режиссёрского) кино (row:0, col:0, side:left)
-        - "Об одной тенденции французского кино" 1954 (row:3, col:3, side:left)
-      - Связи (row:4, col:53, side:right)
-        - Итальянский неореализм (row:4, col:62, side:right)
-          - надо снимать (row:4, col:77, side:right)
-            - на улицах (row:4, col:93, side:right)
-            - не в павильонах (row:5, col:93, side:right)
+        - "Об одной тенденции французского кино" 1954 (row:4, col:3, side:left)
+      - Связи (row:6, col:42, side:right)
+        - Итальянский неореализм (row:6, col:51, side:right)
+          - надо снимать (row:6, col:66, side:right)
+            - на улицах (row:4, col:77, side:right)
+            - не в павильонах (row:6, col:77, side:right)
 #+end_expected
