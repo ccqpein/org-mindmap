@@ -164,7 +164,7 @@ Ensures properties are not sticky to allow editing node text at the boundary."
                      "\n")
                   (list text)))
          (node-box-width (apply #'max (mapcar #'string-width lines)))
-         (padded-lines (mapcar #'(lambda (l) (string-pad l node-box-width)) lines)))
+         (padded-lines (mapcar #'(lambda (l) (string-pad l node-box-width nil (eq side 'left))) lines)))
     ;; IDEA Put lines both below and above the connector row.
     (if (null (org-mindmap-parser-node-parent node))
         ;; ... append delimiters to the first line of the root node
