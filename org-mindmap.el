@@ -131,10 +131,10 @@ Ensures properties are not sticky to allow editing node text at the boundary."
   (goto-char (point-min))
   (forward-line row)
   (move-to-column col)
-  (while (< (current-column) col)
+  (when (< (current-column) col)
     ;; TODO Here we have a surprising side effect, it should probably
     ;; be placed somewhere closer to rendering.
-    (insert (org-mindmap--propertize-connector " "))
+    (insert (org-mindmap--propertize-connector (string-pad "" (- col (current-column)))))
     (move-to-column col)))
 
 ;; Text rendering
@@ -176,6 +176,7 @@ e.g. 'an apple' won't be splitted into two lines 'an' and 'apple' if this var is
 
 (defun org-mindmap--node-display-lines (node props)
   "Return a list of lines to represent a NODE, respecting PROPS :max-width and :wrap-leaves options."
+  
   (let* ((text (org-mindmap-parser-node-text node))
          (side (org-mindmap-parser-node-side node))
          (is-leaf (not (org-mindmap-parser-node-children node)))
@@ -201,10 +202,16 @@ e.g. 'an apple' won't be splitted into two lines 'an' and 'apple' if this var is
 (defun org-mindmap--node-box (node props)
   "Calculate NODE width, respecting node text wrapping specified by PROPS.
 Return (width height . lines) cons cell."
-  (let* ((lines (org-mindmap--node-display-lines node props))
-         (width (string-width (car lines)))
-         (height (length lines)))
-    (cons width (cons height lines))))
+  (if-let* ((node-cache (plist-get props :node-cache))
+            (node-id (org-mindmap-parser-node-id node))
+            (box (gethash node-id node-cache)))
+      box
+    (let* ((lines (org-mindmap--node-display-lines node props))
+           (width (string-width (car lines)))
+           (height (length lines))
+           (box (cons width (cons height lines))))
+      (puthash node-id box node-cache)
+      box)))
 
 (defun org-mindmap--side-is (node side)
   "Check if NODE is on the given SIDE of the tree."
@@ -515,8 +522,11 @@ Handles legacy migration of :layout left/compact/centered."
            (t
             (setq props (plist-put props key val)))))
         (setq props-string (substring props-string (match-end 0))))
+      ;; Initialize caches
+      (setq props (plist-put props :node-cache (make-hash-table :test 'eq)))
       ;; Fill in the default values.
-      (org-mindmap--populate-properties props roots))))
+      (org-mindmap--populate-properties props roots)
+      )))
 
 (defun org-mindmap--populate-properties (&optional props roots)
   "Populate PROOS plist with default properties for missing keys."
@@ -1050,10 +1060,10 @@ all nodes and their descendants get that side."
              (root-node (org-mindmap-parser-make-node :id (gensym "node") :text (or root-text "")))
              (children (org-mindmap--lisp-to-nodes lisp-list root-node))
              (inhibit-read-only t)
-             (default-props (org-mindmap--populate-properties)))
+             (props (org-mindmap-parse-properties nil (or  root-text "") root-node)))
         (setf (org-mindmap-parser-node-children root-node) children)
         (delete-region begin end)
-        (let ((rendered (org-mindmap-render-tree (list root-node) default-props)))
+        (let ((rendered (org-mindmap-render-tree (list root-node) props)))
           (save-excursion
             (goto-char begin)
             (insert "#+begin_mindmap\n" rendered "\n#+end_mindmap\n")))))))
