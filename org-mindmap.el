@@ -66,8 +66,13 @@ a denser layout.  When nil, children are stacked sequentially."
   :group 'org-mindmap)
 
 (defcustom org-mindmap-default-wrap-leaves t
-  "Default value for leaves wrapping."
-  :type 'boolean
+  "Default value for leaves wrapping:
+- nil: don't wrap leaf nodes;
+- t: wrap leaf nodes as any other nodes;
+- a positive number (int or float): leaf node max width is multiplied by this number, allowing them
+  to be wider if it's above 1.0 or narrower if it's below 1.0.
+For example, if :max-width is 10 and :wrap-leaves is 1.5, leaf nodes soft max width is 15."
+  :type '(choice boolean float)
   :group 'org-mindmap)
 
 (defcustom org-mindmap-protect-connectors nil
@@ -148,10 +153,15 @@ Ensures properties are not sticky to allow editing node text at the boundary."
 (defun org-mindmap--node-display-lines (node props)
   "Return a list of lines to represent a NODE, respecting PROPS :max-width and :wrap-leaves options."
   (let* ((text (org-mindmap-parser-node-text node))
-         (max-width (plist-get props :max-width))
+         (side (org-mindmap-parser-node-side node))
+         (is-leaf (not (org-mindmap-parser-node-children node)))
          (wrap-leaves (plist-get props :wrap-leaves))
-         (lines (if (and max-width (or wrap-leaves (org-mindmap-parser-node-children node)))
-                    (string-split (string-fill text max-width) "\n")
+         (leaves-mult (if (numberp wrap-leaves) wrap-leaves 1))
+         (max-width (plist-get props :max-width))
+         (lines (if (and max-width (or wrap-leaves (not is-leaf)))
+                    (string-split
+                     (string-fill text (floor (* (if is-leaf leaves-mult 1) max-width)))
+                     "\n")
                   (list text)))
          (node-box-width (apply #'max (mapcar #'string-width lines)))
          (padded-lines (mapcar #'(lambda (l) (string-pad l node-box-width)) lines)))
@@ -476,7 +486,7 @@ Handles legacy migration of :layout left/compact/centered."
            ((eq key :max-width)
             (setq props (plist-put props key val)))
            ((eq key :wrap-leaves)
-            (setq props (plist-put props key (not (string= val "nil")))))
+            (setq props (plist-put props key val)))
            (t
             (setq props (plist-put props key val)))))
         (setq props-string (substring props-string (match-end 0))))
@@ -510,9 +520,11 @@ Handles legacy migration of :layout left/compact/centered."
                              val))))
   (setq props (plist-put props :wrap-leaves
                          (if (plist-member props :wrap-leaves)
-                             (plist-get props :wrap-leaves)
+                             (pcase (plist-get props :wrap-leaves)
+                               ("nil" nil)
+                               ("t" t)
+                               (_ (string-to-number (plist-get props :wrap-leaves))))
                            org-mindmap-default-wrap-leaves)))
-  
   props)
 
 (defun org-mindmap--find-node-by-id (roots id)
