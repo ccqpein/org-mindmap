@@ -371,11 +371,11 @@ Requires starting COL and map PROPS."
           (setq prev-child child))))
     ;; Set the node row:
     (setf (org-mindmap-parser-node-row node)
-          (if (eq layout 'centered)
-              ;; ...for centered layout, recenter the whole tree
-              (org-mindmap--center-subtree node props)
-            ;; ...for top layout, take the top children rows
-            (org-mindmap--min-row (org-mindmap--descendants node))))))
+          (cond ((not (org-mindmap-parser-node-children node)) 0)
+                ;; ...for centered layout, recenter the whole tree (!!! It has side effects)
+                ((eq layout 'centered) (org-mindmap--center-subtree node props))
+                ;; ...for top layout, take the top children rows
+                (t (org-mindmap--min-row (org-mindmap--descendants node)))))))
 
 (defun org-mindmap--min-column (nodes)
   "Find minimal column number among NODES if any, otherwise return 0."
@@ -1177,7 +1177,7 @@ nodes of that side."
   (add-hook 'org-metadown-hook #'org-mindmap--metadown)
   (add-hook 'org-metaleft-hook #'org-mindmap--metaleft)
   (add-hook 'org-metaright-hook #'org-mindmap--metaright)
-  (add-hook 'org-tab-first-hook #'org-mindmap--tab)
+  ;; (add-hook 'org-tab-first-hook #'org-mindmap--tab)
   (add-hook 'org-metareturn-hook #'org-mindmap--metareturn)
   (add-hook 'org-ctrl-c-ctrl-c-hook #'org-mindmap--ctrl-c-ctrl-c))
 
