@@ -75,14 +75,42 @@ Use symbols you don't directly type, such as unicode plotting characters."
   :group 'org-mindmap)
 
 
-(defun org-mindmap-parser--debug (fmt &rest args)
+(defvar org-mindmap-parser--debug-accumulator nil
+  "Accumulator for debug messages during a single parsing/updating run.")
+
+(defun org-mindmap-parser--log-message (fmt args)
+  "Log formatted FMT with ARGS to the debug buffer, or accumulate if batching."
+  (if (bound-and-true-p org-mindmap-parser--debug-accumulator)
+      (push (cons fmt args) org-mindmap-parser--debug-accumulator)
+    (let ((buf (get-buffer-create "*org-mindmap-debug*"))
+          (msg (apply #'format fmt args)))
+      (with-current-buffer buf
+        (setq buffer-undo-list t)
+        (save-excursion
+          (goto-char (point-max))
+          (insert msg "\n"))))))
+
+(defmacro org-mindmap-parser--debug (fmt &rest args)
   "Log debug messages to the dedicated trace buffer.
 If `org-mindmap-parser-debug' is t, format FMT with ARGS."
-  (when org-mindmap-parser-debug
-    (with-current-buffer (get-buffer-create "*org-mindmap-debug*")
-      (goto-char (point-max))
-      (insert (apply #'format fmt args) "\n"))
-    nil))
+  `(when org-mindmap-parser-debug
+     (org-mindmap-parser--log-message ,fmt (list ,@args))))
+
+(defmacro org-mindmap-parser-with-debug-batch (&rest body)
+  "Run BODY with debug messages batched and written to the log buffer at the end."
+  (declare (indent 0))
+  `(let ((org-mindmap-parser--debug-accumulator nil))
+     (unwind-protect
+         (progn ,@body)
+       (when (and org-mindmap-parser-debug org-mindmap-parser--debug-accumulator)
+         (let ((buf (get-buffer-create "*org-mindmap-debug*"))
+               (msgs (mapcar (lambda (x) (apply #'format (car x) (cdr x)))
+                             (nreverse org-mindmap-parser--debug-accumulator))))
+           (with-current-buffer buf
+             (setq buffer-undo-list t)
+             (save-excursion
+               (goto-char (point-max))
+               (insert (string-join msgs "\n") "\n"))))))))
 
 ;; Directions
 (defconst org-mindmap-parser-dir-up    '(0 . -1))
@@ -161,7 +189,7 @@ If `org-mindmap-parser-debug' is t, format FMT with ARGS."
   "Safely fetch a character from 2D array of strings LINES at ROW and COL."
   (if (and (>= row 0) (< row (length lines)))
       (let ((line (aref lines row)))
-        (if (and (>= col 0) (< col (string-width line)))
+        (if (and (>= col 0) (< col (length line)))
             (aref line col)
           nil))
     nil))
@@ -491,62 +519,63 @@ VISITED keeps track of visited locations."
 
 (defun org-mindmap-parser-parse-region (&optional start end)
   "Parse mindmap within START to END into a tree structure."
-  (unless (and start end)
-    (let ((region (org-mindmap-parser-get-region)))
-      (when region
-        (setq start (car region)
-              end (cdr region)))))
-  (when (and start end)
-    (org-mindmap-parser--debug "--- Starting parse for region (%d, %d) ---" start end)
-    (let* ((cur-line (line-number-at-pos (point)))
-           (start-line (line-number-at-pos start))
-           (point-row (- cur-line start-line 1))
-           (point-col (current-column))
-           (lines-list nil))
-      (org-mindmap-parser--debug "Point is at: (%d %d) relative to the map start." point-row point-col)
-      (save-excursion
-        (goto-char start)
-        (forward-line 1)
-        (while (and (< (point) end)
-                    (not (looking-at-p "^[ \t]*#\\+end_mindmap")))
-          (push (buffer-substring-no-properties (line-beginning-position) (line-end-position)) lines-list)
-          (forward-line 1)))
-      (let* ((lines (vconcat (nreverse lines-list)))
-             (height (length lines))
-             (max-width (if (> height 0) (apply #'max (mapcar #'length lines)) 0))
-             (visited (make-hash-table :test 'eq))
-             (explicit-root (org-mindmap-parser--find-explicit-root lines visited point-row point-col))
-             (root-node
-              (cond
-               (explicit-root explicit-root)
-               (t (org-mindmap-parser--find-implicit-root lines visited point-row point-col)))))
-        (if root-node
-            (let* ((row (org-mindmap-parser-node-row root-node))
-                   (col-start (org-mindmap-parser-node-col root-node))
-                   (width (org-mindmap-parser-node-width root-node))
-                   (col-end (+ col-start width)))
-              (when (< col-end max-width)
-                ;; Go right
-                (org-mindmap-parser--debug "Going right")
-                (org-mindmap-parser--go lines row col-end org-mindmap-parser-dir-right
-                                        root-node visited 'right point-row point-col)
-                ;; Pick up wrapped lines of the nodes.
-                (org-mindmap-parser--sort-tree root-node)
-                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-right
-                                                        'right visited point-row point-col))
-              (when (> col-start 0)
-                ;; Go left
-                (org-mindmap-parser--debug "Going left")
-                (org-mindmap-parser--go lines row col-start org-mindmap-parser-dir-left
-                                        root-node visited 'left point-row point-col)
-                ;; Pick up wrapped lines of the nodes.
-                (org-mindmap-parser--sort-tree root-node)
-                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-left
-                                                        'left visited point-row point-col))
-              (org-mindmap-parser--debug "--- Finished parse. Root found. ---")
-              (list root-node))
-          (org-mindmap-parser--debug "--- Finished parse. Root not found. ---")
-          nil)))))
+  (org-mindmap-parser-with-debug-batch
+    (unless (and start end)
+      (let ((region (org-mindmap-parser-get-region)))
+        (when region
+          (setq start (car region)
+                end (cdr region)))))
+    (when (and start end)
+      (org-mindmap-parser--debug "--- Starting parse for region (%d, %d) ---" start end)
+      (let* ((cur-line (line-number-at-pos (point)))
+             (start-line (line-number-at-pos start))
+             (point-row (- cur-line start-line 1))
+             (point-col (current-column))
+             (lines-list nil))
+        (org-mindmap-parser--debug "Point is at: (%d %d) relative to the map start." point-row point-col)
+        (save-excursion
+          (goto-char start)
+          (forward-line 1)
+          (while (and (< (point) end)
+                      (not (looking-at-p "^[ \t]*#\\+end_mindmap")))
+            (push (buffer-substring-no-properties (line-beginning-position) (line-end-position)) lines-list)
+            (forward-line 1)))
+        (let* ((lines (vconcat (nreverse lines-list)))
+               (height (length lines))
+               (max-width (if (> height 0) (apply #'max (mapcar #'length lines)) 0))
+               (visited (make-hash-table :test 'eq))
+               (explicit-root (org-mindmap-parser--find-explicit-root lines visited point-row point-col))
+               (root-node
+                (cond
+                 (explicit-root explicit-root)
+                 (t (org-mindmap-parser--find-implicit-root lines visited point-row point-col)))))
+          (if root-node
+              (let* ((row (org-mindmap-parser-node-row root-node))
+                     (col-start (org-mindmap-parser-node-col root-node))
+                     (width (org-mindmap-parser-node-width root-node))
+                     (col-end (+ col-start width)))
+                (when (< col-end max-width)
+                  ;; Go right
+                  (org-mindmap-parser--debug "Going right")
+                  (org-mindmap-parser--go lines row col-end org-mindmap-parser-dir-right
+                                          root-node visited 'right point-row point-col)
+                  ;; Pick up wrapped lines of the nodes.
+                  (org-mindmap-parser--sort-tree root-node)
+                  (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-right
+                                                          'right visited point-row point-col))
+                (when (> col-start 0)
+                  ;; Go left
+                  (org-mindmap-parser--debug "Going left")
+                  (org-mindmap-parser--go lines row col-start org-mindmap-parser-dir-left
+                                          root-node visited 'left point-row point-col)
+                  ;; Pick up wrapped lines of the nodes.
+                  (org-mindmap-parser--sort-tree root-node)
+                  (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-left
+                                                          'left visited point-row point-col))
+                (org-mindmap-parser--debug "--- Finished parse. Root found. ---")
+                (list root-node))
+            (org-mindmap-parser--debug "--- Finished parse. Root not found. ---")
+            nil))))))
 
 (provide 'org-mindmap-parser)
 ;;; org-mindmap-parser.el ends here

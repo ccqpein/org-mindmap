@@ -10,6 +10,13 @@ test:
 	emacs -batch -L . -l tests/test-regressions.el -f ert-run-tests-batch-and-exit
 	emacs -batch -L . -l tests/benchmark.el
 
+benchmark:
+	rm -rf *.elc
+	emacs -batch -L . -f batch-byte-compile org-mindmap-parser.el org-mindmap.el
+	emacs -batch -L . -l tests/benchmark.el
+	emacs -batch -L . -l tests/profile.el
+	# emacs -batch -L . -l tests/benchmark-profile.el
+
 update-test-results:
 	emacs -batch -L . -f batch-byte-compile org-mindmap-parser.el org-mindmap.el
 	UPDATE_SNAPSHOTS=1 emacs -batch -L . -l tests/test-parsing.el

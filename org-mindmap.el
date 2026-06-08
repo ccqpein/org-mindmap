@@ -683,37 +683,39 @@ left/right padding, and root delimiters."
 (defun org-mindmap--update-buffer (start end roots &optional target-node props)
   "Replace region from START to END with rendered ROOTS, and focus TARGET-ID.
 Accepts mindmap PROPS."
-  (let ((rendered (org-mindmap-render-tree roots props)))
-    ;; Draw the map.
-    (save-excursion
+  (org-mindmap-parser-with-debug-batch
+    (let ((rendered (org-mindmap-render-tree roots props)))
+      ;; Draw the map.
+      (save-excursion
+        (goto-char start)
+        (forward-line 1)
+        (let ((inhibit-read-only t))
+          (delete-region (point) (save-excursion (goto-char end) (line-beginning-position)))
+          (insert rendered "\n")))
+      ;; Set the point on its last place.
       (goto-char start)
-      (forward-line 1)
-      (let ((inhibit-read-only t))
-        (delete-region (point) (save-excursion (goto-char end) (line-beginning-position)))
-        (insert rendered "\n")))
-    ;; Set the point on its last place.
-    (goto-char start)
-    (when target-node
-      (if-let* ((pos (org-mindmap--restore-point target-node props))
-                (target-row (car pos))
-                (target-col (cadr pos)))
-          ;; Restore point at exact logical offset
-          (progn
-            (forward-line (1+ target-row))
-            (move-to-column target-col)
-            ;; (while (looking-at " ") (forward-char))
-            )
-        ;; No offset: position at node start (existing behavior)
-        (forward-line (1+ (org-mindmap-parser-node-row target-node)))
-        (move-to-column (org-mindmap-parser-node-col target-node))
-        (while (looking-at " ") (forward-char))
-        (goto-char start)))))
+      (when target-node
+        (if-let* ((pos (org-mindmap--restore-point target-node props))
+                  (target-row (car pos))
+                  (target-col (cadr pos)))
+            ;; Restore point at exact logical offset
+            (progn
+              (forward-line (1+ target-row))
+              (move-to-column target-col)
+              ;; (while (looking-at " ") (forward-char))
+              )
+          ;; No offset: position at node start (existing behavior)
+          (forward-line (1+ (org-mindmap-parser-node-row target-node)))
+          (move-to-column (org-mindmap-parser-node-col target-node))
+          (while (looking-at " ") (forward-char))
+          (goto-char start))))))
 
 (defun org-mindmap-align ()
   "Align and format the current mindmap region based on block properties."
   (interactive)
-  (cl-destructuring-bind (start end props roots target-node) (org-mindmap--get-state)
-    (org-mindmap--update-buffer start end roots target-node props)))
+  (org-mindmap-parser-with-debug-batch
+    (cl-destructuring-bind (start end props roots target-node) (org-mindmap--get-state)
+      (org-mindmap--update-buffer start end roots target-node props))))
 
 ;;
 ;; Structural Editing — Insert and Delete
