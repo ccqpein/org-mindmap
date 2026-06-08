@@ -353,6 +353,16 @@
       - Right (row:0, col:22, side:right)
 #+end_expected
 
+* Test Case 15a: Explicit Root Bidirectional, no spaces around root node
+#+begin_mindmap
+  Left ── ⏴Root⏵ ── Right
+#+end_mindmap
+#+begin_expected
+    - Root (row:0, col:9, side:nil)
+      - Left (row:0, col:2, side:left)
+      - Right (row:0, col:20, side:right)
+#+end_expected
+
 * Test Case 16: Bidirectional Empty Root
 #+begin_mindmap
                           ╭─ constant
@@ -364,7 +374,7 @@
                           ╰─ west                 ╰─ Baluchestan
 #+end_mindmap
 #+begin_expected
-    -  (row:3, col:10, side:nil)
+    -  (row:3, col:9, side:nil)
       - One (row:2, col:3, side:left)
       - Two (row:3, col:2, side:left)
       - Geography (row:3, col:16, side:right)
@@ -384,6 +394,16 @@
       - Identity (row:4, col:16, side:right)
 #+end_expected
 
+* Test Case 16a: Bidirectional Empty Root
+#+begin_mindmap
+LeftParent ── «» ── RightParent ── RightChild
+#+end_mindmap
+#+begin_expected
+    -  (row:0, col:13, side:nil)
+      - LeftParent (row:0, col:0, side:left)
+      - RightParent (row:0, col:20, side:right)
+        - RightChild (row:0, col:35, side:right)
+#+end_expected
 * Test Case 17: Bidirectional Non-Empty Root
 #+begin_mindmap
                                 ╭─ constant
@@ -530,4 +550,14 @@ Root2 ╰─ B
             - на улицах (row:4, col:77, side:right)
             - не в павильонах (row:6, col:77, side:right)
 #+end_expected
-
+* Test Case 25: Right-Only Empty Root
+#+begin_mindmap
+«» ── LeftParent ── LeftChild ── SubChild ── Leaf
+#+end_mindmap
+#+begin_expected
+    -  (row:0, col:0, side:nil)
+      - LeftParent (row:0, col:6, side:right)
+        - LeftChild (row:0, col:20, side:right)
+          - SubChild (row:0, col:33, side:right)
+            - Leaf (row:0, col:45, side:right)
+#+end_expected

@@ -1,6 +1,7 @@
 .PHONY: test lint clean update-test-results
 
 test:
+	rm -rf *.elc
 	emacs -batch -L . -f batch-byte-compile org-mindmap-parser.el org-mindmap.el
 	emacs -batch -L . -l tests/test-parsing.el
 	emacs -batch -L . -l tests/test-rendering.el

@@ -35,7 +35,7 @@
 
 (cl-defstruct (org-mindmap-parser-node (:constructor org-mindmap-parser-make-node))
   "Data structure representing a single mindmap node."
-  id text children depth parent row col width side)
+  id text children depth parent row col width side point-offset)
 
 (defcustom org-mindmap-parser-debug nil
   "If non-nil, print debug information to the *org-mindmap-debug* buffer."
@@ -133,15 +133,20 @@ If `org-mindmap-parser-debug' is t, format FMT with ARGS."
 
 (defun org-mindmap-parser--is-connector (char)
   "Return non-nil if CHAR is a recognized connector character."
-  (and char (gethash char (org-mindmap-parser--get-symbol-registry))))
+  (and char (or (org-mindmap-parser--is-delimiter char)
+                (gethash char (org-mindmap-parser--get-symbol-registry)))))
 
 (defun org-mindmap-parser--is-delimiter (char)
   "Return non-nil if CHAR is a recognized root delimiter character."
-  (and char
-       (cl-some (lambda (pair)
-                  (or (string= (char-to-string char) (car pair))
-                      (string= (char-to-string char) (cdr pair))))
-                org-mindmap-parser-root-delimiters)))
+  (cl-loop for (left . right) in org-mindmap-parser-root-delimiters
+           thereis (or (eq char (string-to-char left))
+                       (eq char (string-to-char right))))
+  ;; (and char
+  ;;      (cl-some (lambda (pair)
+  ;;                 (or (string= (char-to-string char) (car pair))
+  ;;                     (string= (char-to-string char) (cdr pair))))
+  ;;               org-mindmap-parser-root-delimiters))
+  )
 
 (defun org-mindmap-parser--is-whitespace (char)
   "Return non-nil if CHAR is whitespace or null."
@@ -156,7 +161,7 @@ If `org-mindmap-parser-debug' is t, format FMT with ARGS."
   "Safely fetch a character from 2D array of strings LINES at ROW and COL."
   (if (and (>= row 0) (< row (length lines)))
       (let ((line (aref lines row)))
-        (if (and (>= col 0) (< col (length line)))
+        (if (and (>= col 0) (< col (string-width line)))
             (aref line col)
           nil))
     nil))
@@ -208,20 +213,22 @@ Starts from ROW and COL.  VISITED marks the consumed cells."
                     (org-mindmap-parser--is-whitespace char))
           (org-mindmap-parser--mark-visited row curr-col visited)
           (setq curr-col (+ curr-col dx)))
+        (when (not (= col curr-col))
+          (org-mindmap-parser--debug "... consumed spaces from (%d, %d) to (%d, %d)" row col row curr-col))
         curr-col))))
 
 (defun org-mindmap-parser--all-whitespaces (lines row col dir n)
   "Check if, starting from ROW and COL, all N symbols in DIR direction
 in LINES are whitespaces."
   (let ((dx (car dir)))
-    (all #'org-mindmap-parser--is-whitespace
-         (cl-loop for i below n collect
-                  (org-mindmap-parser--grid-get lines row (+ col (* i dx)))))))
+    (cl-loop for i below n
+             for char = (org-mindmap-parser--grid-get lines row (+ col (* i dx)))
+             always (org-mindmap-parser--is-whitespace char))))
 
 (defun org-mindmap-parser--search-back (lines row col limit dir visited)
   "Move cursor in LINES text block from ROW and COL to the reverse of DIR
 direction until it stumbles on a visited cell in VISITED registry, a connector,
-or 2 consecutive space, or reach the shift LIMIT."
+or 2 consecutive spaces, or until it reach the shift LIMIT."
   (let* ((curr-col col)
          (dx (car dir)))
     (if (= dx 0)
@@ -236,13 +243,19 @@ or 2 consecutive space, or reach the shift LIMIT."
                                                               (org-mindmap-parser--invert-dir dir) 2))
                     (<  (* dx (- col curr-col)) limit))
           (setq curr-col (- curr-col dx)))
+        (when (not (= col curr-col))
+          (org-mindmap-parser--debug "... shifted backwards from (%d, %d) to (%d, %d)" row col row curr-col))
         curr-col))))
 
-(defun org-mindmap-parser--consume-text (lines row col dir visited)
+
+(defun org-mindmap-parser--consume-text (lines row col dir visited &optional point-row point-col base-offset keep-empty)
   "Greedily consume text, i.e. non-connector non-empty symbols, in LINES in DIR,
-in ROW, starting from COL, marking consumed symbols as VISITED."
+in ROW, starting from COL, marking consumed symbols as VISITED.
+If POINT-ROW and POINT-COL match a consumed character, compute and return
+the logical offset (BASE-OFFSET + position within chars) of the cursor."
   (let* ((dx (car dir))
          (chars nil)
+         (offset nil)
          (col-maybe-shifted (org-mindmap-parser--search-back lines row col 999 dir visited))
          (start-col (org-mindmap-parser--consume-spaces lines row col-maybe-shifted dir visited))
          (curr-col start-col))
@@ -251,28 +264,63 @@ in ROW, starting from COL, marking consumed symbols as VISITED."
       (let (char next-char)
         ;; Consume chars until we find an obstacle: a visited cell, a connector,
         ;; end of line or two consecutive whitespace symbols.
-        (while (and (not (org-mindmap-parser--is-visited row curr-col visited))
-                    (setq char (org-mindmap-parser--grid-get lines row curr-col))
-                    (not (org-mindmap-parser--is-connector char))
-                    (not (org-mindmap-parser--all-whitespaces lines row curr-col dir 3)))
+        (while (progn
+                 (setq char (org-mindmap-parser--grid-get lines row curr-col))
+                 ;; Check if the char is at point.
+                 (when (and (not offset)
+                            point-row point-col
+                            (= row point-row)
+                            (= curr-col point-col))
+                   (setq offset (+ (length chars) (if (< dx 0) 1 0)))
+                   (org-mindmap-parser--debug "... node is at point. Offset = %d" offset))
+                 ;; Continue if there remains something to consume.
+                 (and char
+                      (not (org-mindmap-parser--is-visited row curr-col visited))
+                      (not (org-mindmap-parser--is-connector char))
+                      (not (org-mindmap-parser--all-whitespaces lines row curr-col dir 3))))
+          ;; Consume the char and shift the cursor.
           (push char chars)
           (org-mindmap-parser--mark-visited row curr-col visited)
           (setq curr-col (+ curr-col dx)))
-        (let* ((final-chars (if (> dx 0) (nreverse chars) chars))
-               (trimmed (string-trim (apply #'string final-chars)))
-               (leftmost-col (if (> dx 0) start-col (+ curr-col 1))))
-          (cons trimmed (cons leftmost-col curr-col)))))))
 
-(defun org-mindmap-parser--consume-node (lines row col dir parent visited side)
+        (let* ((final-chars (if (> dx 0) (nreverse chars) chars))
+               (trimmed (if final-chars (string-trim (apply #'string final-chars)) ""))
+               (len (string-width trimmed))
+               (leftmost-col (if (> dx 0) start-col (+ curr-col 1))))
+          ;; Edge case: cursor before/after the consumed text on this row
+          (when (and (or chars keep-empty) point-row point-col (= row point-row) (not offset))
+            (let ((point-ahead (* dx (- point-col curr-col)))
+                  (point-behind (* dx (- start-col point-col))))
+              (cond
+               ;; ... point is after the last collected char
+               ((and (>= point-ahead 0) (<= point-ahead 2))
+                (setq offset len)
+                (org-mindmap-parser--debug "... point is after the node. Offset = %d" offset))
+               ;; ... point is before the last collected char
+               ((and (>= point-behind 0) (<= point-behind 2))
+                (setq offset 0)
+                (org-mindmap-parser--debug "... point is before the node. Offset = %d" offset)))))
+          (when (and offset (< dx 0))
+            ;; Reverse the offset for left side nodes.
+            ;; Prevent going up the line: limit the min offset by 0.
+            (setq offset (max 0 (- len offset)))
+            (org-mindmap-parser--debug "... which is %d counting from the left side" offset))
+          (when (and base-offset offset)
+            (incf offset base-offset)
+            (org-mindmap-parser--debug "... which is %d for the node text" offset))
+          (cons trimmed (cons leftmost-col (cons curr-col offset))))))))
+
+(defun org-mindmap-parser--consume-node (lines row col dir parent visited side &optional point-row point-col keep-empty)
   "Greedily consume non-connector characters in LINES in DIR to form a node label.
 Starts from ROW and COL.  SIDE is assigned to the created node with PARENT.
 VISITED marks the consumed cells."
-  (let* ((result (org-mindmap-parser--consume-text lines row col dir visited))
+  (let* ((result (org-mindmap-parser--consume-text lines row col dir visited point-row point-col 0 keep-empty))
          (text (car result))
          (leftmost-col (cadr result))
-         (curr-col (cddr result))
+         (curr-col (caddr result))
+         (offset (cdddr result))
          (next-col (org-mindmap-parser--consume-spaces lines row curr-col dir visited))
-         (node (when (not (string= text ""))
+         (node (when (or keep-empty (not (string= text "")))
                  (org-mindmap-parser-make-node
                   :id (gensym "node")
                   :text text
@@ -281,14 +329,15 @@ VISITED marks the consumed cells."
                   :row row
                   :col leftmost-col
                   :width (abs (- curr-col col))
-                  :side side))))
+                  :side side
+                  :point-offset offset))))
     (when node
       (org-mindmap-parser--debug "Found node: '%s' at (%d, %d)" text row leftmost-col)
       (when parent
         (push node (org-mindmap-parser-node-children parent))))
     (cons node (cons row next-col))))
 
-(defun org-mindmap-parser--go (lines row col dir parent visited side)
+(defun org-mindmap-parser--go (lines row col dir parent visited side &optional point-row point-col)
   "Recursive 2D walker following connectors and nodes in LINES.
 Starts from ROW and COL in DIR.  Assigns PARENT and SIDE.
 VISITED keeps track of visited locations."
@@ -297,8 +346,9 @@ VISITED keeps track of visited locations."
     (org-mindmap-parser--debug "Stumbled on visited cell at (%d, %d)" row col))
    ((not (org-mindmap-parser--grid-get lines row col))
     (org-mindmap-parser--debug "Reached boundaries at (%d, %d)" row col))
-   (t (let* ((char (org-mindmap-parser--grid-get lines row col))
-             (possible-dirs (org-mindmap-parser--dirs char)))
+   (t (when-let* ((col (org-mindmap-parser--consume-spaces lines row col dir visited))
+                  (char (org-mindmap-parser--grid-get lines row col))
+                  (possible-dirs (org-mindmap-parser--dirs char)))
         (org-mindmap-parser--mark-visited row col visited)
         (org-mindmap-parser--debug "On char %c at (%d, %d), considering dirs: %s" char row col possible-dirs)
         (dolist (possible-dir possible-dirs)
@@ -308,19 +358,19 @@ VISITED keeps track of visited locations."
                    (next-side (or side (if (< (car possible-dir) 0) 'left 'right))))
               (cond
                ((org-mindmap-parser--snaps lines prow pcol possible-dir)
-                (org-mindmap-parser--go lines prow pcol possible-dir parent visited next-side))
+                (org-mindmap-parser--go lines prow pcol possible-dir parent visited next-side point-row point-col))
                ((= (cdr possible-dir) 0)
-                (let* ((node-res (org-mindmap-parser--consume-node lines prow pcol possible-dir parent visited next-side))
+                (let* ((node-res (org-mindmap-parser--consume-node lines prow pcol possible-dir parent visited next-side point-row point-col))
                        (new-node (car node-res))
                        (nxt (cdr node-res))
                        (nxt-row (car nxt))
                        (nxt-col (cdr nxt)))
                   (if (org-mindmap-parser--snaps lines nxt-row nxt-col possible-dir)
-                      (org-mindmap-parser--go lines nxt-row nxt-col possible-dir (or new-node parent) visited next-side))))
+                      (org-mindmap-parser--go lines nxt-row nxt-col possible-dir (or new-node parent) visited next-side point-row point-col))))
                (t
                 (let ((glued (org-mindmap-parser--glue lines prow pcol possible-dir)))
                   (when glued
-                    (org-mindmap-parser--go lines (car glued) (cdr glued) possible-dir parent visited next-side))))))))))))
+                    (org-mindmap-parser--go lines (car glued) (cdr glued) possible-dir parent visited next-side point-row point-col))))))))))))
 
 (defun org-mindmap-parser-get-region ()
   "Detect #+begin_mindmap and #+end_mindmap boundaries around point."
@@ -339,33 +389,29 @@ VISITED keeps track of visited locations."
   "Check if cursor is inside a mindmap region."
   (when (org-mindmap-parser-get-region) t))
 
-(defun org-mindmap-parser--find-explicit-root (lines)
+(defun org-mindmap-parser--find-explicit-root (lines visited &optional point-row point-col)
   "Find an explicit root in LINES."
-  (let ((explicit-root nil)
-        (height (length lines)))
-    (dolist (pair org-mindmap-parser-root-delimiters)
-      (let ((left (car pair))
-            (right (cdr pair)))
-        (cl-loop for row from 0 to (1- height)
-                 until explicit-root
-                 do
-                 (let ((line (aref lines row)))
-                   (when (string-match (concat (regexp-quote left) "\\(.*?\\)" (regexp-quote right)) line)
-                     (let ((col-start (match-beginning 0))
-                           (col-end (match-end 0))
-                           (text (string-trim (match-string 1 line))))
-                       (org-mindmap-parser--debug "Found explicit root node: %s at (%d, %d)" text row col-start)
-                       (setq explicit-root (org-mindmap-parser-make-node
-                                            :id (gensym "node")
-                                            :text text
-                                            :depth 0
-                                            :row row
-                                            :col col-start
-                                            :width (1+ (- col-end col-start))
-                                            :side nil))))))))
-    explicit-root))
+  (cl-loop for (left . right) in org-mindmap-parser-root-delimiters thereis
+           (cl-loop for row below (length lines) thereis
+                    (let ((line (aref lines row))
+                          (root-regexp (concat (regexp-quote left) "\\(.*?\\)" (regexp-quote right))))
+                      (when (string-match root-regexp line)
+                        (let* ((col-start (match-beginning 1))
+                               (result (org-mindmap-parser--consume-node
+                                        lines row col-start org-mindmap-parser-dir-right
+                                        nil visited nil point-row point-col t))
+                               (node (car result))
+                               (text (org-mindmap-parser-node-text node)))
+                          ;; Fix width and start col to go beyond root delimiters
+                          ;; (they're connectors but they're not connected with others)
+                          (setf (org-mindmap-parser-node-col node) (max 0 (- (org-mindmap-parser-node-col node) 2))
+                                (org-mindmap-parser-node-width node) (+ 3 (org-mindmap-parser-node-width node))
+                                (org-mindmap-parser-node-point-offset node) (when (org-mindmap-parser-node-point-offset node)
+                                                                              (+ 2 (org-mindmap-parser-node-point-offset node))))
+                          (org-mindmap-parser--debug "Found explicit root node: %s at (%d, %d)" text row col-start)
+                          node))))))
 
-(defun org-mindmap-parser--find-implicit-root (lines visited)
+(defun org-mindmap-parser--find-implicit-root (lines visited &optional point-row point-col)
   "Find an implicit root in LINES.  Mark visited cells in VISITED."
   (let ((height (length lines))
         (implicit-conn-root nil)
@@ -385,7 +431,8 @@ VISITED keeps track of visited locations."
      (implicit-text-root
       (let* ((r (car implicit-text-root))
              (c (cadr implicit-text-root))
-             (node-res (org-mindmap-parser--consume-node lines r c org-mindmap-parser-dir-right nil visited nil))
+             (node-res (org-mindmap-parser--consume-node
+                        lines r c org-mindmap-parser-dir-right nil visited nil point-row point-col))
              (node (car node-res)))
         node))
      (implicit-conn-root
@@ -409,35 +456,37 @@ VISITED keeps track of visited locations."
   (dolist (child (org-mindmap-parser-node-children node))
     (org-mindmap-parser--sort-tree child)))
 
-(defun org-mindmap-parser--join-continuations (node lines dir visited)
+(defun org-mindmap-parser--join-continuations (node lines dir side visited &optional point-row point-col)
   "Check if there are extra lines below the node, and if any, attach them to the node text."
   ;; For each child node:
   (dolist (child-node (org-mindmap-parser-node-children node))
     ;; Process its children.
-    (org-mindmap-parser--join-continuations child-node lines dir visited))
+    (when (eq (org-mindmap-parser-node-side child-node) side)
+      (org-mindmap-parser--join-continuations child-node lines dir side visited point-row point-col)))
   ;; Pick up wrapped lines of the given node.
   (let* ((side (org-mindmap-parser-node-side node))
          (text (org-mindmap-parser-node-text node))
          (row (org-mindmap-parser-node-row node))
          (col (org-mindmap-parser-node-col node))
-         (start-col (if (eq side 'left)
-                        (+ col (string-width text))
-                      ;; If a node has side, it must have parent. Only root node has no parent.
-                      ;; (let* ((parent (org-mindmap-parser-node-parent node))
-                      ;;        (parent-col (org-mindmap-parser-node-col parent)))
-                      ;;   (- parent-col 4))
-                      col))
+         (start-col (if (eq side 'left) (+ col (string-width text) -1) col))
          (i 1))
-    (while (let* ((result (org-mindmap-parser--consume-text lines (+ row i) start-col dir visited))
+    (org-mindmap-parser--debug "Node '%s' (%d, %d): looking for continuations from (%d, %d)."
+                               text row col (+ row i) start-col)
+    (while (let* ((width (string-width (org-mindmap-parser-node-text node)))
+                  (base-offset (1+ width))
+                  (result (org-mindmap-parser--consume-text
+                           lines (+ row i) start-col dir visited point-row point-col base-offset))
                   (text (car result))
                   (leftmost-col (cadr result))
                   (found-text (and text (not (string= text "")))))
              (when found-text
-               (setf (org-mindmap-parser-node-text node)
-                     (concat (org-mindmap-parser-node-text node) " " text))
+               (org-mindmap-parser--debug "... '%s'" text)
+               (setf (org-mindmap-parser-node-text node) (concat (org-mindmap-parser-node-text node) " " text))
                (when (eq side 'left)
                  (setf (org-mindmap-parser-node-col node) leftmost-col))
-               (setq i (1+ i)))
+               (incf i)
+               (when-let* ((offset (cdddr result)))
+                 (setf (org-mindmap-parser-node-point-offset node) offset)))
              found-text))))
 
 (defun org-mindmap-parser-parse-region (&optional start end)
@@ -449,7 +498,12 @@ VISITED keeps track of visited locations."
               end (cdr region)))))
   (when (and start end)
     (org-mindmap-parser--debug "--- Starting parse for region (%d, %d) ---" start end)
-    (let ((lines-list nil))
+    (let* ((cur-line (line-number-at-pos (point)))
+           (start-line (line-number-at-pos start))
+           (point-row (- cur-line start-line 1))
+           (point-col (current-column))
+           (lines-list nil))
+      (org-mindmap-parser--debug "Point is at: (%d %d) relative to the map start." point-row point-col)
       (save-excursion
         (goto-char start)
         (forward-line 1)
@@ -461,11 +515,11 @@ VISITED keeps track of visited locations."
              (height (length lines))
              (max-width (if (> height 0) (apply #'max (mapcar #'length lines)) 0))
              (visited (make-hash-table :test 'eq))
-             (explicit-root (org-mindmap-parser--find-explicit-root lines))
+             (explicit-root (org-mindmap-parser--find-explicit-root lines visited point-row point-col))
              (root-node
               (cond
                (explicit-root explicit-root)
-               (t (org-mindmap-parser--find-implicit-root lines visited)))))
+               (t (org-mindmap-parser--find-implicit-root lines visited point-row point-col)))))
         (if root-node
             (let* ((row (org-mindmap-parser-node-row root-node))
                    (col-start (org-mindmap-parser-node-col root-node))
@@ -474,17 +528,21 @@ VISITED keeps track of visited locations."
               (when (< col-end max-width)
                 ;; Go right
                 (org-mindmap-parser--debug "Going right")
-                (org-mindmap-parser--go lines row col-end org-mindmap-parser-dir-right root-node visited 'right)
+                (org-mindmap-parser--go lines row col-end org-mindmap-parser-dir-right
+                                        root-node visited 'right point-row point-col)
                 ;; Pick up wrapped lines of the nodes.
                 (org-mindmap-parser--sort-tree root-node)
-                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-right visited))
+                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-right
+                                                        'right visited point-row point-col))
               (when (> col-start 0)
                 ;; Go left
                 (org-mindmap-parser--debug "Going left")
-                (org-mindmap-parser--go lines row col-start org-mindmap-parser-dir-left root-node visited 'left)
+                (org-mindmap-parser--go lines row col-start org-mindmap-parser-dir-left
+                                        root-node visited 'left point-row point-col)
                 ;; Pick up wrapped lines of the nodes.
                 (org-mindmap-parser--sort-tree root-node)
-                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-left visited))
+                (org-mindmap-parser--join-continuations root-node lines org-mindmap-parser-dir-left
+                                                        'left visited point-row point-col))
               (org-mindmap-parser--debug "--- Finished parse. Root found. ---")
               (list root-node))
           (org-mindmap-parser--debug "--- Finished parse. Root not found. ---")
