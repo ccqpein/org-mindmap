@@ -324,14 +324,9 @@ Starts from ROW and COL.  VISITED marks the consumed cells."
         (dx (car dir)))
     (if (or (= dx 0) (< row 0) (>= row (length lines)))
         col
-      (let* ((line (aref lines row))
-             (len (length line))
-             (is-vec (vectorp line))
-             char)
-        (while (and (>= curr-col 0) (< curr-col len)
-                    (let ((val (aref line curr-col)))
-                      (setq char (if is-vec (car val) val)))
-                    (or (null char) (= char ?\s) (= char ?\t)))
+      (let* (char)
+        (while (and (setq char (org-mindmap-parser--grid-get lines row curr-col))
+                    (org-mindmap-parser--is-whitespace char))
           (org-mindmap-parser--mark-visited row curr-col visited)
           (setq curr-col (+ curr-col dx)))
         (when (not (= col curr-col))
@@ -344,16 +339,10 @@ in LINES are whitespaces."
   (let ((dx (car dir)))
     (if (or (= dx 0) (< row 0) (>= row (length lines)))
         t
-      (let* ((line (aref lines row))
-             (len (length line))
-             (is-vec (vectorp line)))
+      (let* ((line (aref lines row)))
         (cl-loop for i below n
-                 for c-col = (+ col (* i dx))
-                 always (if (and (>= c-col 0) (< c-col len))
-                            (let* ((val (aref line c-col))
-                                   (char (if is-vec (car val) val)))
-                              (or (null char) (= char ?\s) (= char ?\t)))
-                          t))))))
+                 for char = (org-mindmap-parser--grid-get lines row (+ col (* i dx)))
+                 always (org-mindmap-parser--is-whitespace char))))))
 
 (defun org-mindmap-parser--search-back (lines row col limit dir visited)
   "Move cursor in LINES text block from ROW and COL to the reverse of DIR

@@ -38,7 +38,10 @@
             (plist-get error-props :context))))
 
 (defun test-parse-all ()
-  (let ((failed 0)
+  (let (;; emulate interactive usage
+        (gc-cons-threshold 800000)
+        (gc-cons-percentage 0.1)
+        (failed 0)
         (passed 0)
         (skipped 0))
     (with-current-buffer (find-file-noselect "tests/test-parsing.org")
