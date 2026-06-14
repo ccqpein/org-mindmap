@@ -45,7 +45,7 @@
   :type 'integer
   :group 'org-mindmap)
 
-(defcustom org-mindmap-default-layout 'top
+(defcustom org-mindmap-default-layout 'centered
   "Default layout mode."
   :type '(choice (const top) (const centered))
   :group 'org-mindmap)
@@ -57,7 +57,7 @@ a denser layout.  When nil, children are stacked sequentially."
   :type 'boolean
   :group 'org-mindmap)
 
-(defcustom org-mindmap-default-max-width nil
+(defcustom org-mindmap-default-max-width 'auto
   "Default maximal width limit for node text soft wrapping:
 - nil: no wrapping;
 - a non-negative integer: constant max width (0 means a newline after each word);
@@ -71,7 +71,7 @@ e.g. 'an apple' won't be splitted into two lines 'an' and 'apple' if this var is
   :type 'integer
   :group 'org-mindmap)
 
-(defcustom org-mindmap-default-wrap-leaves t
+(defcustom org-mindmap-default-wrap-leaves 3
   "Default value for leaves wrapping:
 - nil: don't wrap leaf nodes;
 - t: wrap leaf nodes as any other nodes;
@@ -101,27 +101,23 @@ For example, if :max-width is 10 and :wrap-leaves is 1.5, leaf nodes soft max wi
   "Face for node text."
   :group 'org-mindmap)
 
-(defcustom org-mindmap-default-paint-depth nil
+;; ...subtree painting
+
+(defcustom org-mindmap-default-paint-depth 0
   "Default depth from which to paint subtrees."
   :type 'integer
   :group 'org-mindmap)
 
-(defvar org-mindmap-color-palette
-  ;; just RGB
-  ;; '("blue" "green" "red")
+(defun org-mindmap-color-palette-rgb ()
+  "A simple hardcoded palette: red, green and blue."
+  '("red" "green" "blue"))
+
+(defun org-mindmap-color-palette-from-font-lock ()
+  "Gather foreground colors from the usual entities painted by font lock.
+In every decent theme they probably are discernable, colorful and in accordance
+with the other theme colors."
   (mapcar
    #'face-foreground
-   ;;  ;; rainbow-delimiters
-   ;;  ;; '(rainbow-delimiters-depth-1-face
-   ;;  ;;   rainbow-delimiters-depth-2-face
-   ;;  ;;   rainbow-delimiters-depth-3-face
-   ;;  ;;   rainbow-delimiters-depth-4-face
-   ;;  ;;   rainbow-delimiters-depth-5-face
-   ;;  ;;   rainbow-delimiters-depth-6-face
-   ;;  ;;   rainbow-delimiters-depth-7-face
-   ;;  ;;   rainbow-delimiters-depth-8-face
-   ;;  ;;   rainbow-delimiters-depth-9-face)
-   ;; font lock colors, should be fine for any theme
    '(font-lock-keyword-face
      font-lock-function-name-face
      font-lock-string-face
@@ -130,8 +126,38 @@ For example, if :max-width is 10 and :wrap-leaves is 1.5, leaf nodes soft max wi
      font-lock-builtin-face
      font-lock-warning-face
      font-lock-variable-name-face
-     font-lock-number-face))
-  "List of colors to paint subtrees in.")
+     font-lock-number-face)))
+
+(defun org-mindmap-color-palette-from-rainbow-delimiters ()
+  "Gather foreground colors from `rainbow-delimiters' package, if instelled."
+  (if (featurep 'rainbow-delimiters)
+      (mapcar
+       #'face-foreground
+       '(font-lock-keyword-face
+         font-lock-function-name-face
+         font-lock-string-face
+         font-lock-type-face
+         font-lock-constant-face
+         font-lock-builtin-face
+         font-lock-warning-face
+         font-lock-variable-name-face
+         font-lock-number-face))
+    (error "`rainbow-delimiters' not found!")))
+
+(defcustom org-mindmap-color-palette-fn 'org-mindmap-color-palette-from-font-lock
+  "A function returning color string list to use for painting map subtrees.
+- 'org-mindmap-color-palette-from-font-lock — take colors from faces defined by your theme
+  for common objects like functions, variables, errors etc. Should give a good-looking result
+  if they look good for their target objects in a theme.
+- 'org-mindmap-color-palette-from-rainbow-delimiters — take colors from paren colors in
+  rainbow-delimiters, if it's installed.
+- 'org-mindmap-color-palette-rgb — just red, green and blue (may look ugly in some themes)
+- any function returning a list of strings (either color names like \"black\" or \"grey12\"
+  or RGB codes like \"#ff0000\")."
+  :type 'function
+  :group 'org-mindmap)
+
+(defvar org-mindmap-color-palette nil "List of colors to paint subtrees in.")
 
 (defcustom org-mindmap-paint-tinge-fg 0.8
   "Ratio of colorization for face foreground color."
@@ -158,6 +184,31 @@ For example, if :max-width is 10 and :wrap-leaves is 1.5, leaf nodes soft max wi
           (color-name-to-rgb (or color "black"))
           (color-name-to-rgb (or (face-background face nil t) "black"))
           org-mindmap-paint-tinge-bg)))
+
+(defun org-mindmap-assign-color-by-num (node num)
+  "Assign a color to a NODE in a tree by its NUM in the tree."
+  (nth (mod num (length org-mindmap-color-palette))
+       org-mindmap-color-palette))
+
+(defun org-mindmap-assign-color-by-text (node num)
+  "Assign a color to a NODE by its text, regardless its NUM in the tree."
+  (let ((i (string-to-number (secure-hash 'md5 (org-mindmap-parser-node-text node)) 16)))
+    (nth (mod i (length org-mindmap-color-palette))
+         org-mindmap-color-palette)))
+
+(defcustom org-mindmap-color-assign-fn 'org-mindmap-assign-color-by-text
+  "A function returning color string for a node by its properties and its number in a tree.
+- 'org-mindmap-assign-color-by-num — ignore node text, just count its location in the tree.
+  If you move the node in a tree, its color also changes.
+- 'org-mindmap-assign-color-by-text — the color is constant while the text does not change,
+  regardless of node's location in the tree.
+
+Both options may confuse since we would like colors to stick to nodes. But we can't reach that
+since we don't store any parsing metadata."
+  :type 'function
+  :group 'org-mindmap)
+
+;; helper fns
 
 (defun org-mindmap--propertize-connector (str &optional color)
   "Apply face and optional read-only properties to connector STR.
@@ -632,11 +683,10 @@ HAS-ABOVE, HAS-BELOW, HAS-LEFT, HAS-RIGHT are booleans."
               (paint-depth (plist-get props :paint-depth)))
           (cl-loop for child in children
                    and i below (length children)
-                   and child-color = (if (and paint-depth (= depth paint-depth))
-                                         (nth (mod i (length org-mindmap-color-palette))
-                                              org-mindmap-color-palette)
-                                       color)
-                   do (org-mindmap-draw-subtree child props child-color)))))))
+                   do (let ((child-color (if (and paint-depth (= depth paint-depth))
+                                             (funcall org-mindmap-color-assign-fn child i)
+                                           color)))
+                        (org-mindmap-draw-subtree child props child-color))))))))
 
 (defun org-mindmap-render-tree (roots &optional props)
   "Render ROOTS evaluating the specified :layout geometry and :spacing from map PROPS.
@@ -646,7 +696,8 @@ If :compacted is non-nil, nodes fill vacant vertical spaces."
     (org-mindmap-build-tree-layout roots props)
     (with-temp-buffer
       (setq indent-tabs-mode nil)
-      (let ((inhibit-read-only t))
+      (let ((inhibit-read-only t)
+            (org-mindmap-color-palette (funcall org-mindmap-color-palette-fn)))
         (cl-loop for root in roots
                  do (org-mindmap-draw-subtree root props nil)))
       (buffer-string))))

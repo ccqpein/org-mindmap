@@ -4,57 +4,6 @@ Editable mind maps for Org.
 
 [[./img/map.png]]
 
-#+begin_src
-#+begin_mindmap :max-width auto :wrap-leaves nil :compacted nil :layout centered
-                                                                                                            ╭─ centered ── this is centered
-                                                                                             ╭─ two layouts ┼─ top ── and this is top
-                                                                                             │              ╰─ switch with C-c m v
-                                                                                             │            ╭─ :max-width <n> ── soft-wrap nodes at n chars
-                                                                                             │            ├─ :max-width ┬─ compute based on the width of your window
-                                                                                             ├─ wrap long ┤  auto       ╰─ and the depth of your map
-                                                                                             │  nodes     ╰─ :wrap-leaves ┬─ nil ── don't wrap leaves at all
-                                                                                             │                            ╰─ <p> ── p times longer than non-leaves
-                                                                                             ├─ supports two-sided maps!
-                                                                           ╭─ align mindmaps ┼─ point is ┬─ and preserved
-                                                                           │                 │  tracked  ╰─ see the point in the middle of the node
-                                                                           │                 │             ╭─ for large maps
-                                                                           │                 ├─ compaction ┼─ subtrees can be shifted upwards
-                                                                           │                 │             ╰─ if there is free space
-                                                                           │                 │             ╭─ will fix small misalignments
-                                                                           │                 │             │                ╭─ with a node in front of it
-                                                                           │                 ╰─ robustness ┴─ if you edit a ┼─ and this mode's connectors shift
-                                                                           │                                  node          ├─ it'll try to recover
-                                                                           │                                                ╰─ see =recovery-drift= option
-                              no rendering ─╮                              │             ╭─ =M-<up>/<down>= ── move up/down
- editing mode ─┬ between ── no discrepancy ─┤                              ├─ move nodes ┼─ =M-<left>/<right>= ── move up/down the tree
-and view mode ─╯                            ├ text only ── « what can it » ┤             ╰─ works with subtrees
-            as regular text ── can edit it ─┤                do?           │          ╭─ to org list ── =C-c m l=
-                     no extra dependencies ─┤                              │          │              ╭─ =C-c m m=
-                                     no js ─╯                              ├─ convert ┤              ├─ but map        ── yet
-                                                                           │          ╰─ from a list ╯  settings from 
-                                                                           │                            the header are
-                                                                           │                            not saved     
-                                                                           │                             ╭─ Chinese ── 你好世界
-                                                                           │           ╭─ variable width ┼─ Japanese ── こんにちは世界
-                                                                           │           │  chars          ├─ Korean ── 안녕하세요
-                                                                           │           │                 ╰─ but you'll need a CJK monospace font
-                                                                           ├─ supports ┤                ╭─ nodes ── font properties
-                                                                           │           │                ├─ connectors ── and         ── but better it use the same bg
-                                                                           │           ╰─ customization ┤                whitespaces
-                                                                           │                            ╰─ root       ── =M-x customize-group org-mindmap=
-                                                                           │                               delimiters
-                                                                           │       ╭─ M-ret to edit ┬─ add nodes on the right side
-                                                                           │       │  a node        ╰─ then move to the left one
-                                                                           │       ├─ start typing ── then M-ret ── and continue in minibuffer
-                                                                           ╰─ tips ┼─ use footnotes ┬─ for the long blocks
-                                                                                   │                ╰─ [fn:1]
-                                                                                   ╰─ if you need ── and they're ── consider setting =alloc-gc-cons-percentage= option to 0.5-0.7
-                                                                                      large maps     laggy      
-#+end_mindmap
-#+end_src
-
-[fn:1] In a footnote below the map one can insert links, use markup, even tables, and whatever Org provides. A possible use case is to draft a report as a mindmap, write a paragraph or two for each leaf, and then to assemble a report from those pieces.
-
 * Installation
 If you're using Emacs version 29 or later:
 #+begin_src elisp
@@ -315,3 +264,46 @@ One more map, from another book: Ervand Abrahamian. A History of Modern Iran.
 near mountains ── oases ─╯
 #+end_mindmap
 #+end_src
+
+The map about org-mindmap:
+#+begin_src
+#+begin_mindmap :max-width auto :wrap-leaves 2 :compacted nil :layout centered
+                 this is centered ── centered ─╮
+                       and this is top ── top ─┼ two layouts ─╮
+                          switch with C-c m v ─╯              │                                           ╭─ =M-<up>/<down>= ── move up/down
+             soft-wrap nodes at n ── :max-width ─╮            │                             ╭─ move nodes ┼─ =M-<left>/<right>= ── move up/down the tree
+                            chars           <n>  │            │                             │             ╰─ works with subtrees
+             compute based on the ─╮             │            │                             │          ╭─ to org list ── =C-c m l=
+             width of your window  ├ :max-width ─┤            │                             │          │              ╭─ =C-c m m=
+            and the depth of your ─╯       auto  ├ wrap long ─┤                             │          │              ├─ but map    ── yet
+                              map                │     nodes  │                             ├─ convert ┴─ from a list ╯  settings  
+don't wrap leaves at all ── nil ─╮               │            │                             │                            from the  
+     p times longer than ── <p> ─┴ :wrap-leaves ─╯            │                             │                            header are
+              non-leaves                                      │                             │                            not saved 
+                                    supports two-sided maps! ─┤                             │                          ╭─ Chinese ── 你好世界
+                                   and preserved ─╮           │                             │                          ├─ Japanese ── こんにちは世界
+                            see the point in the ─┴ point is ─┼    align ─╮                 │           ╭─ variable    ┼─ Korean ── 안녕하세요
+                              middle of the node     tracked  │ mindmaps  │                 │           │  width chars ╰─ but you'll need a CJK
+                                for large maps ─╮             │           │                 ├─ supports ┤                 monospace font       
+                       subtrees can be shifted ─┼ compaction ─┤           ├ « what can it » ┤           │                ╭─ nodes ── font properties
+                                       upwards  │             │           │   do?           │           │                ├─ connectors ── and         ── but better it use the
+                        if there is free space ─╯             │           │                 │           ╰─ customization ┤                whitespaces    same bg              
+                                will fix small ─╮             │           │                 │                            ╰─ root       ── =M-x customize-group
+                                 misalignments  │             │           │                 │                               delimiters    org-mindmap=        
+        with a node in front of ─╮              │             │           │                 │                      ╭─ add nodes on the right
+                             it  │              │             │           │                 │       ╭─ M-ret to    ┤  side                  
+                and this mode's ─┤              ├ robustness ─╯           │                 │       │  edit a node ╰─ then move to the left
+               connectors shift  ├ if you edit ─╯                         │                 │       │                 one                  
+           it'll try to recover ─┤      a node                            │                 │       ├─ start typing ── then M-ret ── and continue in
+           see =recovery-drift= ─╯                                        │                 ╰─ tips ┤                                minibuffer     
+                         option                                           │                         ├─ use       ┬─ for the long blocks
+                                               no rendering ─╮            │                         │  footnotes ╰─ [fn:1]
+                  editing mode ─┬ between ── no discrepancy ─┤            │                         │                             ╭─ consider setting          
+                 and view mode ─╯                            ├ text only ─╯                         ╰─ if you need ── and they're ╯  =alloc-gc-cons-percentage=
+                             as regular text ── can edit it ─┤                                         large maps     laggy          option to 0.5-0.7         
+                                      no extra dependencies ─┤
+                                                      no js ─╯
+#+end_mindmap
+#+end_src
+
+[fn:1] In a footnote below the map one can insert links, use markup, even tables, and whatever Org provides. A possible use case is to draft a report as a mindmap, write a paragraph or two for each leaf, and then to assemble a report from those pieces.
