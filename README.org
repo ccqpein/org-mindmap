@@ -236,7 +236,7 @@ Other packages dealing with unicode, like =uniline=, encounter the same problem.
 ** Chinese, Japanese, Korean
 I did my best to support CJK characters, though I speak no Chinese, Japanese or Korean and can't really test it. If you find bugs, please report.
 
-You'll need a font which sets width for those characters to be exactly double of the regular characters, otherwise your map will be visually crumpled, vertical connectors will not align. I've tested =Noto Sans Mono CJK SC= and it seems to work fine.
+You'll need a font which sets width for those characters to be exactly double of the regular characters, otherwise your map will be visually crumpled, vertical connectors will not align.
 
 ** Right-to-Left
 Left-to-right text may work, but it was not tested. If you have bugs, please report.
