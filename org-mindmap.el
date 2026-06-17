@@ -140,15 +140,15 @@ with the other theme colors."
   (if (featurep 'rainbow-delimiters)
       (mapcar
        #'face-foreground
-       '(font-lock-keyword-face
-         font-lock-function-name-face
-         font-lock-string-face
-         font-lock-type-face
-         font-lock-constant-face
-         font-lock-builtin-face
-         font-lock-warning-face
-         font-lock-variable-name-face
-         font-lock-number-face))
+       '(rainbow-delimiters-depth-1-face
+         rainbow-delimiters-depth-2-face
+         rainbow-delimiters-depth-3-face
+         rainbow-delimiters-depth-4-face
+         rainbow-delimiters-depth-5-face
+         rainbow-delimiters-depth-6-face
+         rainbow-delimiters-depth-7-face
+         rainbow-delimiters-depth-8-face
+         rainbow-delimiters-depth-9-face))
     (error "`rainbow-delimiters' not found!")))
 
 (defcustom org-mindmap-color-palette-fn 'org-mindmap-color-palette-from-font-lock
@@ -194,10 +194,12 @@ For instance:
 
 (A backport of the function from emacs v31.)"
   (setq alpha (or alpha 0.5))
-  (let (blend)
-    (dotimes (i 3)
-      (push (+ (* (nth i a) alpha) (* (nth i b) (- 1 alpha))) blend))
-    (nreverse blend)))
+  (if (and a b)
+      (let (blend)
+        (dotimes (i 3)
+          (push (+ (* (nth i a) alpha) (* (nth i b) (- 1 alpha))) blend))
+        (nreverse blend))
+    (or a b)))
 
 (defun org-mindmap--color-rgb-to-hex  (red green blue &optional digits-per-component)
   "Return hexadecimal #RGB notation for the color specified by RED GREEN BLUE.
@@ -215,16 +217,16 @@ or 2; use the latter if you need a 24-bit specification of a color.
   "Tinge FACE's background color with COLOR."
   (apply #'org-mindmap--color-rgb-to-hex
          (org-mindmap--color-blend
-          (color-name-to-rgb (or color "black"))
-          (color-name-to-rgb (or (face-foreground face nil t) "black"))
+          (color-name-to-rgb (or color (face-foreground 'default)))
+          (color-name-to-rgb (face-foreground face nil 'default))
           org-mindmap-paint-tinge-fg)))
 
 (defun org-mindmap--tinge-bg (face color)
   "Tinge FACE's background color with COLOR."
   (apply #'org-mindmap--color-rgb-to-hex
          (org-mindmap--color-blend
-          (color-name-to-rgb (or color "black"))
-          (color-name-to-rgb (or (face-background face nil t) "black"))
+          (color-name-to-rgb (or color (face-background 'default) ))
+          (color-name-to-rgb (face-background face nil 'default))
           org-mindmap-paint-tinge-bg)))
 
 (defun org-mindmap-assign-color-by-num (_node num)
